@@ -35,7 +35,7 @@ export function LessonFacts({ model, side }: LessonFactsProps) {
           <i />
           <span><small>Thể tích</small><strong>{model.volumeFormula}</strong></span>
         </div>
-        <div className="formula-result">Với a = {side} cm, thể tích là <strong>{formatNumber(model.volume(side))} cm³</strong></div>
+        <div className="formula-result">Với {model.parameterContext(side)}, thể tích là <strong>{formatNumber(model.volume(side))} cm³</strong></div>
       </article>
     </section>
   );

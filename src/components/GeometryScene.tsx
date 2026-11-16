@@ -27,7 +27,105 @@ function foldedPoint(
   );
 }
 
+const cuboidHinges = [
+  { face: 1, parent: 0, edge: [[1, -0.75], [1, 0.75]] },
+  { face: 2, parent: 1, edge: [[2, -0.75], [2, 0.75]] },
+  { face: 3, parent: 0, edge: [[-1, -0.75], [-1, 0.75]] },
+  { face: 4, parent: 0, edge: [[-1, 0.75], [1, 0.75]] },
+  { face: 5, parent: 0, edge: [[-1, -0.75], [1, -0.75]] },
+] as const;
+
+function findFacePoint(face: ShapeFace, net: readonly [number, number]) {
+  const found = face.points.find((point) => point.net[0] === net[0] && point.net[1] === net[1]);
+  if (!found) throw new Error(`Missing hinge point on face "${face.name}".`);
+  return found;
+}
+
+function faceNormal(face: ShapeFace) {
+  const origin = new THREE.Vector3(...face.points[0].solid);
+  const first = new THREE.Vector3(...face.points[1].solid).sub(origin);
+  const second = new THREE.Vector3(...face.points[2].solid).sub(origin);
+  return first.cross(second).normalize();
+}
+
+function getCuboidFaceTransforms(model: ShapeDefinition, fold: number) {
+  const transforms: THREE.Matrix4[] = [];
+  const rootPoint = model.faces[0].points[0];
+  transforms[0] = new THREE.Matrix4().makeTranslation(
+    (rootPoint.solid[0] - rootPoint.net[0]) * fold,
+    (rootPoint.solid[1] - rootPoint.net[1]) * fold,
+    rootPoint.solid[2] * fold,
+  );
+
+  cuboidHinges.forEach(({ face: faceIndex, parent: parentIndex, edge }) => {
+    const parentTransform = transforms[parentIndex];
+    if (!parentTransform) throw new Error(`Missing parent transform for cuboid face ${faceIndex}.`);
+
+    const parentFace = model.faces[parentIndex];
+    const currentStart = new THREE.Vector3(edge[0][0], edge[0][1], 0).applyMatrix4(parentTransform);
+    const currentEnd = new THREE.Vector3(edge[1][0], edge[1][1], 0).applyMatrix4(parentTransform);
+    const currentAxis = currentEnd.sub(currentStart).normalize();
+    const solidStart = new THREE.Vector3(...findFacePoint(parentFace, edge[0]).solid);
+    const solidEnd = new THREE.Vector3(...findFacePoint(parentFace, edge[1]).solid);
+    const finalAxis = solidEnd.sub(solidStart).normalize();
+    const parentNormal = faceNormal(parentFace);
+    const childNormal = faceNormal(model.faces[faceIndex]);
+    const angle = Math.atan2(
+      finalAxis.dot(parentNormal.clone().cross(childNormal)),
+      parentNormal.dot(childNormal),
+    );
+    const pivot = new THREE.Matrix4().makeTranslation(currentStart.x, currentStart.y, currentStart.z);
+    const unpivot = new THREE.Matrix4().makeTranslation(-currentStart.x, -currentStart.y, -currentStart.z);
+    const rotation = new THREE.Matrix4().makeRotationAxis(currentAxis, angle * fold);
+
+    transforms[faceIndex] = pivot.multiply(rotation).multiply(unpivot).multiply(parentTransform);
+  });
+
+  return transforms;
+}
+
+function transformedPoint(
+  net: readonly [number, number],
+  transform: THREE.Matrix4,
+  scale: number,
+) {
+  return new THREE.Vector3(net[0], net[1], 0).applyMatrix4(transform).multiplyScalar(scale);
+}
+
 function getModelVertices(model: ShapeDefinition, fold: number, scale: number) {
+  if (model.id === "cuboid") {
+    const transforms = getCuboidFaceTransforms(model, fold);
+    return model.faces.flatMap((face, index) =>
+      face.points.map((point) => transformedPoint(point.net, transforms[index], scale)),
+    );
+  }
+
+  if (model.geometry !== "polyhedron") {
+    if (model.geometry === "sphere") {
+      return Array.from({ length: 16 }, (_, latitude) =>
+        Array.from({ length: 32 }, (_, longitude) => {
+          const phi = (latitude / 15) * Math.PI;
+          const theta = (longitude / 32) * Math.PI * 2;
+          return new THREE.Vector3(
+            Math.sin(phi) * Math.cos(theta) * scale,
+            Math.cos(phi) * scale,
+            Math.sin(phi) * Math.sin(theta) * scale,
+          );
+        }),
+      ).flat();
+    }
+
+    return Array.from({ length: 48 }, (_, index) => {
+      const angle = (index / 48) * Math.PI * 2;
+      const x = Math.cos(angle) * scale;
+      const z = Math.sin(angle) * scale;
+      return [
+        new THREE.Vector3(x, -scale, z),
+        new THREE.Vector3(model.geometry === "cone" ? 0 : x, scale, model.geometry === "cone" ? 0 : z),
+      ];
+    }).flat();
+  }
+
   return model.faces.flatMap((face) =>
     face.points.map((point) => foldedPoint(point.net, point.solid, fold, scale)),
   );
@@ -82,18 +180,32 @@ function CameraFit({ shape, fold, side }: Pick<GeometrySceneProps, "shape" | "fo
 
 interface FoldingFaceProps {
   face: ShapeFace;
+  faceIndex: number;
   fold: number;
   foldRef: React.MutableRefObject<number>;
+  foldTransformsRef?: React.MutableRefObject<THREE.Matrix4[]>;
+  initialTransform?: THREE.Matrix4;
   scale: number;
 }
 
-function FoldingFace({ face, fold, foldRef, scale }: FoldingFaceProps) {
+function FoldingFace({
+  face,
+  faceIndex,
+  fold,
+  foldRef,
+  foldTransformsRef,
+  initialTransform,
+  scale,
+}: FoldingFaceProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const geometry = useMemo(() => {
     const result = new THREE.BufferGeometry();
     const positions = new THREE.BufferAttribute(new Float32Array(face.points.length * 3), 3);
     face.points.forEach((point, index) => {
-      const vertex = foldedPoint(point.net, point.solid, fold / 100, scale);
+      const transform = initialTransform;
+      const vertex = transform
+        ? transformedPoint(point.net, transform, scale)
+        : foldedPoint(point.net, point.solid, fold / 100, scale);
       positions.setXYZ(index, vertex.x, vertex.y, vertex.z);
     });
     result.setAttribute("position", positions);
@@ -105,18 +217,21 @@ function FoldingFace({ face, fold, foldRef, scale }: FoldingFaceProps) {
     result.computeVertexNormals();
     result.computeBoundingSphere();
     return result;
-  }, [face, fold, scale]);
+  }, [face, fold, initialTransform, scale]);
   const outlineGeometry = useMemo(() => {
     const result = new THREE.BufferGeometry();
     const positions = new THREE.BufferAttribute(new Float32Array(face.points.length * 3), 3);
     face.points.forEach((point, index) => {
-      const vertex = foldedPoint(point.net, point.solid, fold / 100, scale);
+      const transform = initialTransform;
+      const vertex = transform
+        ? transformedPoint(point.net, transform, scale)
+        : foldedPoint(point.net, point.solid, fold / 100, scale);
       positions.setXYZ(index, vertex.x, vertex.y, vertex.z);
     });
     result.setAttribute("position", positions);
     result.computeBoundingSphere();
     return result;
-  }, [face, fold, scale]);
+  }, [face, fold, initialTransform, scale]);
 
   useEffect(
     () => () => {
@@ -127,11 +242,13 @@ function FoldingFace({ face, fold, foldRef, scale }: FoldingFaceProps) {
   );
 
   useFrame(() => {
-    const progress = foldRef.current;
     const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
     const outline = outlineGeometry.getAttribute("position") as THREE.BufferAttribute;
     face.points.forEach((point, index) => {
-      const vertex = foldedPoint(point.net, point.solid, progress, scale);
+      const transform = foldTransformsRef?.current[faceIndex];
+      const vertex = transform
+        ? transformedPoint(point.net, transform, scale)
+        : foldedPoint(point.net, point.solid, foldRef.current, scale);
       positions.setXYZ(index, vertex.x, vertex.y, vertex.z);
       outline.setXYZ(index, vertex.x, vertex.y, vertex.z);
     });
@@ -143,7 +260,7 @@ function FoldingFace({ face, fold, foldRef, scale }: FoldingFaceProps) {
 
   return (
     <group>
-      <mesh ref={meshRef} geometry={geometry} castShadow receiveShadow>
+      <mesh ref={meshRef} geometry={geometry}>
         <meshStandardMaterial color={face.color} roughness={0.48} metalness={0.02} side={THREE.DoubleSide} />
       </mesh>
       <lineLoop geometry={outlineGeometry}>
@@ -153,9 +270,13 @@ function FoldingFace({ face, fold, foldRef, scale }: FoldingFaceProps) {
   );
 }
 
-function ShapeMesh({ shape, fold, side }: Omit<GeometrySceneProps, "autoRotate" | "resetRef" | "theme">) {
+type ShapeMeshProps = Pick<GeometrySceneProps, "shape" | "fold" | "side">;
+
+function PolyhedronMesh({ shape, fold, side }: ShapeMeshProps) {
   const model = models[shape];
   const foldRef = useRef(fold / 100);
+  const initialTransforms = shape === "cuboid" ? getCuboidFaceTransforms(model, fold / 100) : [];
+  const foldTransformsRef = useRef(initialTransforms);
   const scale = side / 4;
   const center = useMemo(
     () => sceneCenter(getModelVertices(model, fold / 100, scale)),
@@ -164,7 +285,10 @@ function ShapeMesh({ shape, fold, side }: Omit<GeometrySceneProps, "autoRotate" 
 
   useFrame((_, delta) => {
     foldRef.current = THREE.MathUtils.damp(foldRef.current, fold / 100, 5, delta);
-  });
+    if (shape === "cuboid") {
+      foldTransformsRef.current = getCuboidFaceTransforms(model, foldRef.current);
+    }
+  }, -1);
 
   return (
     <group position={center.clone().negate()}>
@@ -172,13 +296,36 @@ function ShapeMesh({ shape, fold, side }: Omit<GeometrySceneProps, "autoRotate" 
         <FoldingFace
           key={`${shape}-${index}`}
           face={face}
+          faceIndex={index}
           fold={fold}
           foldRef={foldRef}
+          foldTransformsRef={shape === "cuboid" ? foldTransformsRef : undefined}
+          initialTransform={initialTransforms[index]}
           scale={scale}
         />
       ))}
     </group>
   );
+}
+
+function RoundSolidMesh({ shape, side }: ShapeMeshProps) {
+  const model = models[shape];
+  const scale = side / 4;
+
+  return (
+    <mesh scale={scale} castShadow receiveShadow>
+      {model.geometry === "cylinder" && <cylinderGeometry args={[1, 1, 2, 64]} />}
+      {model.geometry === "cone" && <coneGeometry args={[1, 2, 64]} />}
+      {model.geometry === "sphere" && <sphereGeometry args={[1, 48, 32]} />}
+      <meshStandardMaterial color="#7292F6" roughness={0.42} metalness={0.03} />
+    </mesh>
+  );
+}
+
+function ShapeMesh(props: ShapeMeshProps) {
+  return models[props.shape].geometry === "polyhedron"
+    ? <PolyhedronMesh key={props.shape} {...props} />
+    : <RoundSolidMesh key={props.shape} {...props} />;
 }
 
 export function GeometryScene({

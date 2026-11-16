@@ -47,6 +47,14 @@ export default function App() {
   const quizRef = useRef<HTMLDivElement>(null);
   const resetViewRef = useRef<(() => void) | null>(null);
   const model = models[shape];
+  const isPolyhedron = model.geometry === "polyhedron";
+  const sceneStatus = isPolyhedron
+    ? fold === 0
+      ? `LƯỚI KHAI TRIỂN · ${model.faces.length} MẶT`
+      : fold === 100
+        ? "MÔ HÌNH 3D · CÓ THỂ TƯƠNG TÁC"
+        : "ĐANG GẤP · KÉO ĐỂ XOAY"
+    : "KHỐI TRÒN XOAY · KÉO ĐỂ QUAN SÁT";
 
   useLayoutEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -139,7 +147,7 @@ export default function App() {
           <div>
             <div className="eyebrow"><span className="eyebrow-dot" /> PHÒNG THÍ NGHIỆM HÌNH HỌC <span className="eyebrow-separator">/</span> BÀI 01</div>
             <h1>Khám phá hình khối</h1>
-            <p className="subtitle">Xoay, gấp mở và tìm hiểu hình học không gian theo cách của bạn.</p>
+            <p className="subtitle">Gấp mở khối đa diện, xoay khối tròn và khám phá hình học không gian theo cách của bạn.</p>
           </div>
           <div className="lesson-badge"><BookOpen size={15} /> Bài học tương tác <span>·</span> 5 phút</div>
         </section>
@@ -197,14 +205,25 @@ export default function App() {
                   />
                 </Suspense>
                 <div className="scene-status">
-                  <span className={`status-dot ${fold === 100 ? "assembled" : ""}`} />
-                  <span>{fold === 0 ? `LƯỚI KHAI TRIỂN · ${model.faces.length} MẶT` : fold === 100 ? "MÔ HÌNH 3D · CÓ THỂ TƯƠNG TÁC" : "ĐANG GẤP · KÉO ĐỂ XOAY"}</span>
+                  <span className={`status-dot ${!isPolyhedron || fold === 100 ? "assembled" : ""}`} />
+                  <span>{sceneStatus}</span>
                 </div>
                 <div className="drag-hint"><span className="drag-icon"><ChevronRight size={13} /></span>Kéo để xoay <kbd>↔</kbd></div>
                 <div className={`scene-legend${showLegend ? "" : " scene-legend-hidden"}`} aria-label="Chú giải màu sắc">
-                  <span><i className="legend-dot blue" />Mặt bên</span>
-                  <span><i className="legend-dot mint" />Mặt đáy</span>
-                  <span><i className="legend-dot amber" />Mặt trên</span>
+                  {isPolyhedron ? (
+                    <>
+                      <span><i className="legend-dot blue" />Mặt bên</span>
+                      <span><i className="legend-dot mint" />Mặt đáy</span>
+                      <span><i className="legend-dot amber" />Mặt trên</span>
+                    </>
+                  ) : model.geometry === "sphere" ? (
+                    <span><i className="legend-dot blue" />Mặt cầu</span>
+                  ) : (
+                    <>
+                      <span><i className="legend-dot blue" />Mặt cong</span>
+                      <span><i className="legend-dot mint" />{model.geometry === "cylinder" ? "2 đáy tròn" : "Đáy tròn"}</span>
+                    </>
+                  )}
                 </div>
               </div>
               <div className="stage-caption">
@@ -236,7 +255,12 @@ export default function App() {
             />
             <section className="coach-card">
               <span className="coach-icon"><Sparkles size={16} /></span>
-              <div><strong>Mẹo khám phá</strong><p>Thử <b>mở phẳng</b> hình rồi đếm số mặt. Kéo mô hình để nhìn từ phía sau nữa nhé!</p></div>
+              <div>
+                <strong>Mẹo khám phá</strong>
+                <p>{isPolyhedron
+                  ? <>Thử <b>mở phẳng</b> hình rồi đếm số mặt. Kéo mô hình để nhìn từ phía sau nữa nhé!</>
+                  : <>Kéo mô hình hoặc bật <b>tự động xoay</b> để quan sát mặt cong và các đáy.</>}</p>
+              </div>
             </section>
             <div ref={quizRef} className="quiz-anchor">
               <QuizCard key={shape} model={model} />

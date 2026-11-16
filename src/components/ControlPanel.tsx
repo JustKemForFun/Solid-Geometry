@@ -51,49 +51,56 @@ export function ControlPanel({
         <span className="controls-indicator"><span /> Trực tiếp</span>
       </div>
 
-      <div className="control-block">
-        <div className="control-heading">
-          <label className="control-label" htmlFor="fold-slider">
-            <span className="control-icon violet"><Box size={15} /></span>
-            Gấp / mở hình
-          </label>
-          <output className="control-output" htmlFor="fold-slider">{fold}%</output>
+      {model.geometry === "polyhedron" ? (
+        <div className="control-block">
+          <div className="control-heading">
+            <label className="control-label" htmlFor="fold-slider">
+              <span className="control-icon violet"><Box size={15} /></span>
+              Gấp / mở hình
+            </label>
+            <output className="control-output" htmlFor="fold-slider">{fold}%</output>
+          </div>
+          <Slider.Root
+            className="slider-root"
+            id="fold-slider"
+            min={0}
+            max={100}
+            step={1}
+            value={[fold]}
+            onValueChange={([value]) => value !== undefined && onFoldChange(value)}
+            aria-label="Mức độ gấp mở hình"
+          >
+            <Slider.Track className="slider-track"><Slider.Range className="slider-range" /></Slider.Track>
+            <Slider.Thumb className="slider-thumb" aria-label="Điều chỉnh mức gấp" />
+          </Slider.Root>
+          <div className="range-labels"><span>Mở phẳng</span><span>Hình khối</span></div>
+          <ToggleGroup.Root
+            className="fold-presets"
+            type="single"
+            value={presetValue}
+            onValueChange={(value) => value && onFoldChange(Number(value))}
+            aria-label="Chọn nhanh mức gấp"
+          >
+            {presets.map((preset) => (
+              <ToggleGroup.Item className="preset-button" value={preset.value} key={preset.value}>
+                {preset.label}
+              </ToggleGroup.Item>
+            ))}
+          </ToggleGroup.Root>
+          <p className="phase-note" aria-live="polite">{phaseCopy}</p>
         </div>
-        <Slider.Root
-          className="slider-root"
-          id="fold-slider"
-          min={0}
-          max={100}
-          step={1}
-          value={[fold]}
-          onValueChange={([value]) => value !== undefined && onFoldChange(value)}
-          aria-label="Mức độ gấp mở hình"
-        >
-          <Slider.Track className="slider-track"><Slider.Range className="slider-range" /></Slider.Track>
-          <Slider.Thumb className="slider-thumb" aria-label="Điều chỉnh mức gấp" />
-        </Slider.Root>
-        <div className="range-labels"><span>Mở phẳng</span><span>Hình khối</span></div>
-        <ToggleGroup.Root
-          className="fold-presets"
-          type="single"
-          value={presetValue}
-          onValueChange={(value) => value && onFoldChange(Number(value))}
-          aria-label="Chọn nhanh mức gấp"
-        >
-          {presets.map((preset) => (
-            <ToggleGroup.Item className="preset-button" value={preset.value} key={preset.value}>
-              {preset.label}
-            </ToggleGroup.Item>
-          ))}
-        </ToggleGroup.Root>
-        <p className="phase-note" aria-live="polite">{phaseCopy}</p>
-      </div>
+      ) : (
+        <div className="control-block round-solid-note">
+          <span className="control-icon violet"><Box size={15} /></span>
+          <p>Khối tròn xoay · kéo mô hình hoặc bật tự động xoay để quan sát từ mọi phía.</p>
+        </div>
+      )}
 
       <div className="control-block">
         <div className="control-heading">
           <label className="control-label" htmlFor="size-slider">
             <span className="control-icon amber"><Ruler size={15} /></span>
-            Độ dài cạnh a
+            {model.parameterLabel}
           </label>
           <output className="control-output" htmlFor="size-slider">{side} cm</output>
         </div>
@@ -105,10 +112,10 @@ export function ControlPanel({
           step={1}
           value={[side]}
           onValueChange={([value]) => value !== undefined && onSideChange(value)}
-          aria-label="Độ dài cạnh hình"
+          aria-label={model.parameterLabel}
         >
           <Slider.Track className="slider-track"><Slider.Range className="slider-range amber-range" /></Slider.Track>
-          <Slider.Thumb className="slider-thumb amber-thumb" aria-label="Điều chỉnh độ dài cạnh" />
+          <Slider.Thumb className="slider-thumb amber-thumb" aria-label={`Điều chỉnh ${model.parameterLabel.toLowerCase()}`} />
         </Slider.Root>
         <div className="range-labels"><span>2 cm</span><span>8 cm</span></div>
       </div>
