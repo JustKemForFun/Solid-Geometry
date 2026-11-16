@@ -3,6 +3,7 @@ import {
   BookOpen,
   Box,
   Check,
+  CircleDot,
   ChevronRight,
   Expand,
   Eye,
@@ -39,6 +40,7 @@ export default function App() {
   });
   const [autoRotate, setAutoRotate] = useState(false);
   const [showLegend, setShowLegend] = useState(true);
+  const [showVertices, setShowVertices] = useState(false);
   const [activeSection, setActiveSection] = useState<SectionId>("explore");
   const [fullscreen, setFullscreen] = useState(false);
   const [notice, setNotice] = useState("");
@@ -177,6 +179,16 @@ export default function App() {
                     title="Ẩn/hiện chú giải màu"
                     onClick={() => setShowLegend((value) => !value)}
                   >{showLegend ? <Eye size={16} /> : <EyeOff size={16} />}</button>
+                  {model.vertices.length > 0 && (
+                    <button
+                      className={`icon-button${showVertices ? " active" : ""}`}
+                      type="button"
+                      aria-label={showVertices ? "Ẩn nhãn các điểm" : "Hiện nhãn các điểm"}
+                      aria-pressed={showVertices}
+                      title={showVertices ? "Ẩn nhãn các điểm" : "Hiện nhãn các điểm"}
+                      onClick={() => setShowVertices((value) => !value)}
+                    ><CircleDot size={16} /></button>
+                  )}
                   <button
                     className="icon-button"
                     type="button"
@@ -201,6 +213,7 @@ export default function App() {
                     side={side}
                     theme={theme}
                     autoRotate={autoRotate}
+                    showVertices={showVertices}
                     resetRef={resetViewRef}
                   />
                 </Suspense>

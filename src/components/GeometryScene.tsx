@@ -3,7 +3,13 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import { models, type ShapeDefinition, type ShapeFace, type ShapeId } from "../data/models";
+import {
+  models,
+  type ShapeDefinition,
+  type ShapeFace,
+  type ShapeId,
+  type ShapeVertex,
+} from "../data/models";
 
 interface GeometrySceneProps {
   shape: ShapeId;
@@ -11,6 +17,7 @@ interface GeometrySceneProps {
   side: number;
   theme: "light" | "dark";
   autoRotate: boolean;
+  showVertices: boolean;
   resetRef: React.MutableRefObject<(() => void) | null>;
 }
 
@@ -90,6 +97,130 @@ function transformedPoint(
   scale: number,
 ) {
   return new THREE.Vector3(net[0], net[1], 0).applyMatrix4(transform).multiplyScalar(scale);
+}
+
+function findVertexAnchor(model: ShapeDefinition, vertex: ShapeVertex) {
+  for (const [faceIndex, face] of model.faces.entries()) {
+    const point = face.points.find((candidate) =>
+      candidate.solid.every((coordinate, index) => coordinate === vertex.point[index]),
+    );
+    if (point) return { faceIndex, net: point.net };
+  }
+  return null;
+}
+
+function createVertexTexture(label: string, theme: "light" | "dark") {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 128;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Unable to create a canvas context for vertex labels.");
+
+  context.beginPath();
+  context.arc(64, 64, 59, 0, Math.PI * 2);
+  context.fillStyle = theme === "dark" ? "#e8eefb" : "#ffffff";
+  context.fill();
+  context.lineWidth = 6;
+  context.strokeStyle = theme === "dark" ? "#778fe0" : "#7189df";
+  context.stroke();
+  context.fillStyle = "#263957";
+  context.font = "700 54px Arial, sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(label, 64, 67, 104);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+interface VertexAnnotationProps {
+  model: ShapeDefinition;
+  vertex: ShapeVertex;
+  scale: number;
+  theme: "light" | "dark";
+  foldRef?: React.MutableRefObject<number>;
+  foldTransformsRef?: React.MutableRefObject<THREE.Matrix4[]>;
+}
+
+function VertexAnnotation({
+  model,
+  vertex,
+  scale,
+  theme,
+  foldRef,
+  foldTransformsRef,
+}: VertexAnnotationProps) {
+  const groupRef = useRef<THREE.Group>(null);
+  const anchor = useMemo(() => findVertexAnchor(model, vertex), [model, vertex]);
+  const labelOffset = useMemo(() => {
+    const center = model.vertices.reduce(
+      (sum, point) => sum.add(new THREE.Vector3(...point.point)),
+      new THREE.Vector3(),
+    ).multiplyScalar(1 / model.vertices.length);
+    const offset = new THREE.Vector3(...vertex.point).sub(center);
+    if (offset.lengthSq() < 0.001) offset.set(0, 1, 0);
+    return offset.normalize().multiplyScalar(0.18 * scale);
+  }, [model, scale, vertex]);
+  const texture = useMemo(() => createVertexTexture(vertex.label, theme), [theme, vertex.label]);
+
+  useEffect(() => () => texture.dispose(), [texture]);
+
+  useFrame(() => {
+    if (!groupRef.current) return;
+    const progress = foldRef?.current ?? 1;
+    const transform = anchor && model.id === "cuboid"
+      ? foldTransformsRef?.current[anchor.faceIndex]
+      : undefined;
+    const position = transform && anchor
+      ? transformedPoint(anchor.net, transform, scale)
+      : anchor
+        ? foldedPoint(anchor.net, vertex.point, progress, scale)
+        : new THREE.Vector3(...vertex.point).multiplyScalar(scale);
+    groupRef.current.position.copy(position);
+  });
+
+  return (
+    <group ref={groupRef}>
+      <mesh>
+        <sphereGeometry args={[0.055 * scale, 12, 12]} />
+        <meshBasicMaterial color="#f2c65f" />
+      </mesh>
+      <sprite position={labelOffset} scale={[0.27 * scale, 0.27 * scale, 1]} renderOrder={10}>
+        <spriteMaterial map={texture} transparent depthWrite={false} />
+      </sprite>
+    </group>
+  );
+}
+
+function VertexLabels({
+  shape,
+  side,
+  theme,
+  foldRef,
+  foldTransformsRef,
+}: Pick<GeometrySceneProps, "shape" | "side" | "theme"> & {
+  foldRef?: React.MutableRefObject<number>;
+  foldTransformsRef?: React.MutableRefObject<THREE.Matrix4[]>;
+}) {
+  const model = models[shape];
+  if (model.vertices.length === 0) return null;
+
+  return (
+    <group>
+      {model.vertices.map((vertex) => (
+        <VertexAnnotation
+          key={vertex.label}
+          model={model}
+          vertex={vertex}
+          scale={side / 4}
+          theme={theme}
+          foldRef={foldRef}
+          foldTransformsRef={foldTransformsRef}
+        />
+      ))}
+    </group>
+  );
 }
 
 function getModelVertices(model: ShapeDefinition, fold: number, scale: number) {
@@ -270,9 +401,9 @@ function FoldingFace({
   );
 }
 
-type ShapeMeshProps = Pick<GeometrySceneProps, "shape" | "fold" | "side">;
+type ShapeMeshProps = Pick<GeometrySceneProps, "shape" | "fold" | "side" | "theme" | "showVertices">;
 
-function PolyhedronMesh({ shape, fold, side }: ShapeMeshProps) {
+function PolyhedronMesh({ shape, fold, side, theme, showVertices }: ShapeMeshProps) {
   const model = models[shape];
   const foldRef = useRef(fold / 100);
   const initialTransforms = shape === "cuboid" ? getCuboidFaceTransforms(model, fold / 100) : [];
@@ -304,21 +435,33 @@ function PolyhedronMesh({ shape, fold, side }: ShapeMeshProps) {
           scale={scale}
         />
       ))}
+      {showVertices && (
+        <VertexLabels
+          shape={shape}
+          side={side}
+          theme={theme}
+          foldRef={foldRef}
+          foldTransformsRef={shape === "cuboid" ? foldTransformsRef : undefined}
+        />
+      )}
     </group>
   );
 }
 
-function RoundSolidMesh({ shape, side }: ShapeMeshProps) {
+function RoundSolidMesh({ shape, side, theme, showVertices }: ShapeMeshProps) {
   const model = models[shape];
   const scale = side / 4;
 
   return (
-    <mesh scale={scale} castShadow receiveShadow>
-      {model.geometry === "cylinder" && <cylinderGeometry args={[1, 1, 2, 64]} />}
-      {model.geometry === "cone" && <coneGeometry args={[1, 2, 64]} />}
-      {model.geometry === "sphere" && <sphereGeometry args={[1, 48, 32]} />}
-      <meshStandardMaterial color="#7292F6" roughness={0.42} metalness={0.03} />
-    </mesh>
+    <group>
+      <mesh scale={scale} castShadow receiveShadow>
+        {model.geometry === "cylinder" && <cylinderGeometry args={[1, 1, 2, 64]} />}
+        {model.geometry === "cone" && <coneGeometry args={[1, 2, 64]} />}
+        {model.geometry === "sphere" && <sphereGeometry args={[1, 48, 32]} />}
+        <meshStandardMaterial color="#7292F6" roughness={0.42} metalness={0.03} />
+      </mesh>
+      {showVertices && <VertexLabels shape={shape} side={side} theme={theme} />}
+    </group>
   );
 }
 
@@ -334,6 +477,7 @@ export function GeometryScene({
   side,
   theme,
   autoRotate,
+  showVertices,
   resetRef,
 }: GeometrySceneProps) {
   const controlsRef = useRef<OrbitControlsImpl>(null);
@@ -365,7 +509,7 @@ export function GeometryScene({
       <directionalLight position={[5, 8, 6]} intensity={2.2} castShadow />
       <directionalLight position={[-5, 2, -4]} intensity={0.8} color="#c6d3ff" />
       <CameraFit shape={shape} fold={fold} side={side} />
-      <ShapeMesh shape={shape} fold={fold} side={side} />
+      <ShapeMesh shape={shape} fold={fold} side={side} theme={theme} showVertices={showVertices} />
       <OrbitControls
         ref={controlsRef}
         makeDefault

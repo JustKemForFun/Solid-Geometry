@@ -14,6 +14,11 @@ export interface ShapeFace {
   points: ShapePoint[];
 }
 
+export interface ShapeVertex {
+  label: string;
+  point: Point3;
+}
+
 export interface ShapeDefinition {
   id: ShapeId;
   geometry: GeometryKind;
@@ -34,6 +39,7 @@ export interface ShapeDefinition {
     correct: number;
   };
   faces: ShapeFace[];
+  vertices: ShapeVertex[];
 }
 
 const point = (net: Point2, solid: Point3): ShapePoint => ({ net, solid });
@@ -301,6 +307,16 @@ export const models: Record<ShapeId, ShapeDefinition> = {
       correct: 6,
     },
     faces: cuboidFaces,
+    vertices: [
+      { label: "A", point: [-1, -0.75, 0.5] },
+      { label: "B", point: [1, -0.75, 0.5] },
+      { label: "C", point: [1, -0.75, -0.5] },
+      { label: "D", point: [-1, -0.75, -0.5] },
+      { label: "A′", point: [-1, 0.75, 0.5] },
+      { label: "B′", point: [1, 0.75, 0.5] },
+      { label: "C′", point: [1, 0.75, -0.5] },
+      { label: "D′", point: [-1, 0.75, -0.5] },
+    ],
   },
   cube: {
     id: "cube",
@@ -322,6 +338,16 @@ export const models: Record<ShapeId, ShapeDefinition> = {
       correct: 12,
     },
     faces: cubeFaces,
+    vertices: [
+      { label: "A", point: [-1, -1, 1] },
+      { label: "B", point: [1, -1, 1] },
+      { label: "C", point: [1, -1, -1] },
+      { label: "D", point: [-1, -1, -1] },
+      { label: "A′", point: [-1, 1, 1] },
+      { label: "B′", point: [1, 1, 1] },
+      { label: "C′", point: [1, 1, -1] },
+      { label: "D′", point: [-1, 1, -1] },
+    ],
   },
   pyramid: {
     id: "pyramid",
@@ -343,6 +369,13 @@ export const models: Record<ShapeId, ShapeDefinition> = {
       correct: 4,
     },
     faces: pyramidFaces,
+    vertices: [
+      { label: "A", point: [-1, 0, 1] },
+      { label: "B", point: [1, 0, 1] },
+      { label: "C", point: [1, 0, -1] },
+      { label: "D", point: [-1, 0, -1] },
+      { label: "S", point: [0, 2, 0] },
+    ],
   },
   prism: {
     id: "prism",
@@ -364,6 +397,14 @@ export const models: Record<ShapeId, ShapeDefinition> = {
       correct: 5,
     },
     faces: prismFaces,
+    vertices: [
+      { label: "A", point: [-1, -0.65, -1] },
+      { label: "B", point: [1, -0.65, -1] },
+      { label: "C", point: [0, 1.08, -1] },
+      { label: "A′", point: [-1, -0.65, 1] },
+      { label: "B′", point: [1, -0.65, 1] },
+      { label: "C′", point: [0, 1.08, 1] },
+    ],
   },
   cylinder: {
     id: "cylinder",
@@ -385,6 +426,7 @@ export const models: Record<ShapeId, ShapeDefinition> = {
       correct: 2,
     },
     faces: [],
+    vertices: [],
   },
   cone: {
     id: "cone",
@@ -407,6 +449,7 @@ export const models: Record<ShapeId, ShapeDefinition> = {
       correct: 1,
     },
     faces: [],
+    vertices: [{ label: "S", point: [0, 1, 0] }],
   },
   sphere: {
     id: "sphere",
@@ -428,6 +471,7 @@ export const models: Record<ShapeId, ShapeDefinition> = {
       correct: 0,
     },
     faces: [],
+    vertices: [],
   },
 };
 
