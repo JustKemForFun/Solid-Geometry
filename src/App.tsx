@@ -15,6 +15,7 @@ import {
   Sun,
 } from "lucide-react";
 import { ControlPanel } from "./components/ControlPanel";
+import { FreePointsPanel, type FreePoint } from "./components/FreePointsPanel";
 import { LessonFacts } from "./components/LessonFacts";
 import { ModelPicker } from "./components/ModelPicker";
 import { QuizCard } from "./components/QuizCard";
@@ -26,6 +27,7 @@ const GeometryScene = lazy(() =>
 
 type SectionId = "explore" | "learn" | "challenge";
 type Theme = "light" | "dark";
+const freePointLabels = ["M", "N", "P", "Q", "R", "T", "U", "V", "W", "X", "Y", "Z"];
 
 export default function App() {
   const [shape, setShape] = useState<ShapeId>("cube");
@@ -41,6 +43,8 @@ export default function App() {
   const [autoRotate, setAutoRotate] = useState(false);
   const [showLegend, setShowLegend] = useState(true);
   const [showVertices, setShowVertices] = useState(false);
+  const [freePointsByShape, setFreePointsByShape] = useState<Partial<Record<ShapeId, FreePoint[]>>>({});
+  const [placingFreePoint, setPlacingFreePoint] = useState(false);
   const [activeSection, setActiveSection] = useState<SectionId>("explore");
   const [fullscreen, setFullscreen] = useState(false);
   const [notice, setNotice] = useState("");
@@ -48,7 +52,9 @@ export default function App() {
   const lessonRef = useRef<HTMLElement>(null);
   const quizRef = useRef<HTMLDivElement>(null);
   const resetViewRef = useRef<(() => void) | null>(null);
+  const nextFreePointIdRef = useRef(1);
   const model = models[shape];
+  const freePoints = freePointsByShape[shape] ?? [];
   const isPolyhedron = model.geometry === "polyhedron";
   const sceneStatus = isPolyhedron
     ? fold === 0
@@ -80,6 +86,38 @@ export default function App() {
     setSide(4);
     setAutoRotate(false);
     resetViewRef.current?.();
+  };
+
+  const placeFreePoint = (coordinates: [number, number, number]) => {
+    const usedLabels = new Set([
+      ...model.vertices.map((vertex) => vertex.label),
+      ...freePoints.map((point) => point.label),
+    ]);
+    const label = freePointLabels.find((candidate) => !usedLabels.has(candidate))
+      ?? `M${freePoints.length + 1}`;
+    const [x, y, z] = coordinates.map((coordinate) => Math.round(coordinate * 10) / 10);
+    const point = { id: nextFreePointIdRef.current++, label, x, y, z };
+    setFreePointsByShape((current) => ({
+      ...current,
+      [shape]: [...(current[shape] ?? []), point],
+    }));
+    setPlacingFreePoint(false);
+  };
+
+  const updateFreePoint = (updatedPoint: FreePoint) => {
+    setFreePointsByShape((current) => ({
+      ...current,
+      [shape]: (current[shape] ?? []).map((point) =>
+        point.id === updatedPoint.id ? updatedPoint : point,
+      ),
+    }));
+  };
+
+  const removeFreePoint = (id: number) => {
+    setFreePointsByShape((current) => ({
+      ...current,
+      [shape]: (current[shape] ?? []).filter((point) => point.id !== id),
+    }));
   };
 
   const toggleFullscreen = async () => {
@@ -205,7 +243,7 @@ export default function App() {
                   ><RotateCcw size={16} /></button>
                 </div>
               </div>
-              <div className="scene-surface">
+              <div className={`scene-surface${placingFreePoint ? " point-placement-active" : ""}`}>
                 <Suspense fallback={<div className="scene-loading" role="status"><span />Đang dựng mô hình 3D…</div>}>
                   <GeometryScene
                     shape={shape}
@@ -214,9 +252,17 @@ export default function App() {
                     theme={theme}
                     autoRotate={autoRotate}
                     showVertices={showVertices}
+                    customPoints={freePoints}
+                    placingPoint={placingFreePoint}
+                    onPlacePoint={placeFreePoint}
                     resetRef={resetViewRef}
                   />
                 </Suspense>
+                {placingFreePoint && (
+                  <div className="placement-hint" role="status">
+                    Chạm vào khối hoặc vùng trống để chấm điểm
+                  </div>
+                )}
                 <div className="scene-status">
                   <span className={`status-dot ${!isPolyhedron || fold === 100 ? "assembled" : ""}`} />
                   <span>{sceneStatus}</span>
@@ -255,7 +301,13 @@ export default function App() {
           </div>
 
           <aside className="sidebar">
-            <ModelPicker value={shape} onChange={setShape} />
+            <ModelPicker
+              value={shape}
+              onChange={(nextShape) => {
+                setShape(nextShape);
+                setPlacingFreePoint(false);
+              }}
+            />
             <ControlPanel
               shape={shape}
               fold={fold}
@@ -265,6 +317,14 @@ export default function App() {
               onSideChange={setSide}
               onAutoRotateChange={setAutoRotate}
               onReset={resetModel}
+            />
+            <FreePointsPanel
+              points={freePoints}
+              isPlacing={placingFreePoint}
+              onStartPlacement={() => setPlacingFreePoint(true)}
+              onCancelPlacement={() => setPlacingFreePoint(false)}
+              onChange={updateFreePoint}
+              onRemove={removeFreePoint}
             />
             <section className="coach-card">
               <span className="coach-icon"><Sparkles size={16} /></span>

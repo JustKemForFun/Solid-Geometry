@@ -10,6 +10,7 @@ import {
   type ShapeId,
   type ShapeVertex,
 } from "../data/models";
+import type { FreePoint } from "./FreePointsPanel";
 
 interface GeometrySceneProps {
   shape: ShapeId;
@@ -18,6 +19,9 @@ interface GeometrySceneProps {
   theme: "light" | "dark";
   autoRotate: boolean;
   showVertices: boolean;
+  customPoints: FreePoint[];
+  placingPoint: boolean;
+  onPlacePoint: (point: [number, number, number]) => void;
   resetRef: React.MutableRefObject<(() => void) | null>;
 }
 
@@ -220,6 +224,66 @@ function VertexLabels({
         />
       ))}
     </group>
+  );
+}
+
+function FreePointMarker({
+  point,
+  side,
+  theme,
+}: {
+  point: FreePoint;
+  side: number;
+  theme: "light" | "dark";
+}) {
+  const scale = side / 4;
+  const texture = useMemo(() => createVertexTexture(point.label, theme), [point.label, theme]);
+  useEffect(() => () => texture.dispose(), [texture]);
+
+  return (
+    <group position={[point.x / 2, point.y / 2, point.z / 2]}>
+      <mesh>
+        <sphereGeometry args={[0.06 * scale, 12, 12]} />
+        <meshBasicMaterial color="#f2c65f" depthTest={false} />
+      </mesh>
+      <sprite position={[0, 0.13 * scale, 0]} scale={[0.27 * scale, 0.27 * scale, 1]} renderOrder={20}>
+        <spriteMaterial map={texture} transparent depthTest={false} depthWrite={false} />
+      </sprite>
+    </group>
+  );
+}
+
+function PointPlacementPlane({
+  onPlacePoint,
+}: {
+  onPlacePoint: (point: [number, number, number]) => void;
+}) {
+  const planeRef = useRef<THREE.Mesh>(null);
+
+  useFrame(({ camera }) => {
+    if (!planeRef.current) return;
+    planeRef.current.position.set(0, 0, 0);
+    planeRef.current.quaternion.copy(camera.quaternion);
+  });
+
+  return (
+    <mesh
+      ref={planeRef}
+      onClick={(event) => {
+        event.stopPropagation();
+        onPlacePoint([event.point.x * 2, event.point.y * 2, event.point.z * 2]);
+      }}
+    >
+      <planeGeometry args={[100, 100]} />
+      <meshBasicMaterial
+        color="#ffffff"
+        colorWrite={false}
+        depthWrite={false}
+        side={THREE.DoubleSide}
+        transparent
+        opacity={0}
+      />
+    </mesh>
   );
 }
 
@@ -478,6 +542,9 @@ export function GeometryScene({
   theme,
   autoRotate,
   showVertices,
+  customPoints,
+  placingPoint,
+  onPlacePoint,
   resetRef,
 }: GeometrySceneProps) {
   const controlsRef = useRef<OrbitControlsImpl>(null);
@@ -509,7 +576,20 @@ export function GeometryScene({
       <directionalLight position={[5, 8, 6]} intensity={2.2} castShadow />
       <directionalLight position={[-5, 2, -4]} intensity={0.8} color="#c6d3ff" />
       <CameraFit shape={shape} fold={fold} side={side} />
-      <ShapeMesh shape={shape} fold={fold} side={side} theme={theme} showVertices={showVertices} />
+      {placingPoint && <PointPlacementPlane onPlacePoint={onPlacePoint} />}
+      <group
+        onClick={placingPoint
+          ? (event) => {
+            event.stopPropagation();
+            onPlacePoint([event.point.x * 2, event.point.y * 2, event.point.z * 2]);
+          }
+          : undefined}
+      >
+        <ShapeMesh shape={shape} fold={fold} side={side} theme={theme} showVertices={showVertices} />
+      </group>
+      {customPoints.map((point) => (
+        <FreePointMarker key={point.id} point={point} side={side} theme={theme} />
+      ))}
       <OrbitControls
         ref={controlsRef}
         makeDefault
